@@ -3344,8 +3344,11 @@ async function _startPreloadedMusic(){
 
 async function _enterApp(){
   document.getElementById('loading').style.display='none';
-  // Start music — this runs inside a click handler so autoplay is allowed
+  document.removeEventListener('keydown',_enterAppKey);
   if(AUDIO.playlist.length) _loadTrackAtIdx(0);
+}
+function _enterAppKey(e){
+  if(e.key==='Enter'&&document.getElementById('loadingEnter').style.display!=='none') _enterApp();
 }
 
 // kick off fetch as soon as shaders are ready (before user clicks enter)
@@ -3579,6 +3582,7 @@ function _waitShaders(){
   document.getElementById('loadingTxt').textContent='ready';
   document.getElementById('loading').querySelector('.ldot').style.display='none';
   document.getElementById('loadingEnter').style.display='';
+  document.addEventListener('keydown',_enterAppKey);
   requestAnimationFrame(frame);
   console.log('%cENTHEA','color:#b48bff;font-size:20px;font-weight:bold','— neural-field engine online. mathematics of hallucination running.');
   if(window._preloadMusicReady) window._preloadMusicReady();
