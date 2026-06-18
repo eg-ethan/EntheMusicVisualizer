@@ -230,6 +230,14 @@
 
 <div id="panel">
   <div id="panelCollapse" title="collapse · H">‹</div>
+
+  <!-- always-visible playback controls -->
+  <div class="group" style="display:flex;gap:5px;margin-bottom:14px">
+    <button class="tripbtn" id="btnPause" style="margin-top:0;flex:1" onclick="preloadPause()">⏸ pause</button>
+    <button class="tripbtn" id="btnResume" style="margin-top:0;flex:1;display:none" onclick="preloadResume()">▶ resume</button>
+    <button class="tripbtn" id="btnSkip" style="margin-top:0;flex:1" onclick="preloadSkip()">⏭ skip</button>
+  </div>
+
   <div class="group">
     <div class="label" style="color:var(--accent2)">✦ ASCENSION <span class="val" id="ascV">0.00</span></div>
     <input type="range" id="asc" min="0" max="1" step="0.001" value="0">
@@ -3020,6 +3028,7 @@ function _loadTrackAtIdx(idx){
   if(idx<0||idx>=AUDIO.playlist.length) return;
   AUDIO.plIdx=idx; _updatePlaylistUI();
   loadAudioFile(AUDIO.playlist[idx],true);
+  if(window._setPauseResumeBtn) _setPauseResumeBtn(false);
 }
 function loadPlaylist(files){
   const arr=[...files].filter(f=>f.type.startsWith('audio')||f.type==='video/mp4'||/\.(mp3|flac|ogg|wav|aac|m4a|opus|weba|mp4|m4v)$/i.test(f.name));
@@ -3296,6 +3305,49 @@ buildUI(); buildSubstanceUI(); buildAudioMeter(); buildFlipsUI(); buildScenesUI(
 refreshDevices();
 
 /* ══════════════════════════════════════════════════════════════════════════
+   PRELOADED MUSIC — auto-starts on page load, loops through all tracks
+   ══════════════════════════════════════════════════════════════════════════ */
+const PRELOADED_TRACKS=[
+  'preloadedMusic/nuty or die.mp3',
+  'preloadedMusic/Physco (FREESTYLE).mp3',
+];
+
+function _setPauseResumeBtn(paused){
+  document.getElementById('btnPause').style.display  = paused ? 'none' : '';
+  document.getElementById('btnResume').style.display = paused ? ''     : 'none';
+}
+function preloadPause(){  if(AUDIO.fileEl){ AUDIO.fileEl.pause(); _setPauseResumeBtn(true); } }
+function preloadResume(){ if(AUDIO.fileEl){ AUDIO.fileEl.play().catch(()=>{}); _setPauseResumeBtn(false); } }
+function preloadSkip(){
+  if(!AUDIO.playlist.length) return;
+  const next=(AUDIO.plIdx+1)%AUDIO.playlist.length;
+  _loadTrackAtIdx(next);
+}
+
+async function _startPreloadedMusic(){
+  // fetch each track as a File-like Blob so the existing playlist system handles it
+  const files=[];
+  for(const path of PRELOADED_TRACKS){
+    try{
+      const res=await fetch(path);
+      if(!res.ok) continue;
+      const blob=await res.blob();
+      const name=path.split('/').pop();
+      files.push(new File([blob],name,{type:blob.type||'audio/mpeg'}));
+    }catch(e){ console.warn('preload fetch failed:',path,e); }
+  }
+  if(!files.length) return;
+  loadPlaylist(files);
+  // auto-enable audio
+  S.audio.source='file';
+  document.querySelectorAll('#audioSrc .pill').forEach(e=>e.classList.toggle('active',e.dataset.src==='file'));
+  await enableAudio();
+}
+
+// kick off after shaders are ready so the AudioContext is created in the right order
+window._preloadMusicReady=()=>_startPreloadedMusic();
+
+/* ══════════════════════════════════════════════════════════════════════════
    SPOTIFY INTEGRATION — PKCE OAuth · Web Playback SDK
    ══════════════════════════════════════════════════════════════════════════ */
 const SP={deviceId:null,player:null,currentPlaylist:null,currentTrackId:null,playing:false};
@@ -3522,6 +3574,7 @@ function _waitShaders(){
   document.getElementById('loading').style.display='none';
   requestAnimationFrame(frame);
   console.log('%cENTHEA','color:#b48bff;font-size:20px;font-weight:bold','— neural-field engine online. mathematics of hallucination running.');
+  if(window._preloadMusicReady) window._preloadMusicReady();
 }
 requestAnimationFrame(_waitShaders);
 </script>
