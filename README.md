@@ -187,15 +187,6 @@ the pulsing is tuned gentle, but turn it down / look away if you're sensitive.
 
 ---
 
-## 💜 GIFT
-
-Built with love and zero permission asked, by **[Pliny](https://github.com/elder-plinius)** 🐉
-Free as in **freedom** — licensed **AGPL-3.0** (copyleft, *with the network clause*): fork it, remix it,
-deploy it, VJ a festival with it, teach a class with it — but if you ship or host it, **keep the source
-open and pass it on.** No closing the commons. No caged cognition, downstream too.
-
-If it cracked your mind open a little — **drop a ⭐, and pass it on.**
-
 > *the cortex was always a renderer.*
 
 ```
