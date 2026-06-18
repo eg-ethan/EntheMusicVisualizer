@@ -253,8 +253,8 @@
       <div class="pill" data-src="file">📁 file · track</div>
       <div class="pill" data-src="system">▣ browser tab</div>
     </div>
-    <input type="file" id="audioFile" accept="audio/*" multiple style="display:none">
-    <input type="file" id="audioFolder" accept="audio/*" webkitdirectory style="display:none">
+    <input type="file" id="audioFile" accept="audio/*,video/mp4,.mp4,.m4v" multiple style="display:none">
+    <input type="file" id="audioFolder" accept="audio/*,video/mp4,.mp4,.m4v" webkitdirectory style="display:none">
     <div style="display:flex;gap:5px;margin-top:6px">
       <button class="tripbtn" style="margin-top:0;flex:1" onclick="document.getElementById('audioFile').click()">📁 load tracks</button>
       <button class="tripbtn" style="margin-top:0;flex:1" onclick="document.getElementById('audioFolder').click()">📂 load folder</button>
@@ -3021,7 +3021,7 @@ function _loadTrackAtIdx(idx){
   loadAudioFile(AUDIO.playlist[idx],true);
 }
 function loadPlaylist(files){
-  const arr=[...files].filter(f=>f.type.startsWith('audio')||/\.(mp3|flac|ogg|wav|aac|m4a|opus|weba)$/i.test(f.name));
+  const arr=[...files].filter(f=>f.type.startsWith('audio')||f.type==='video/mp4'||/\.(mp3|flac|ogg|wav|aac|m4a|opus|weba|mp4|m4v)$/i.test(f.name));
   if(!arr.length) return;
   arr.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
   AUDIO.playlist=arr; AUDIO.plIdx=0; _updatePlaylistUI();
@@ -3065,7 +3065,7 @@ addEventListener('dragover',e=>{ e.preventDefault(); });   // drag-drop: audio�
 addEventListener('drop',e=>{
   e.preventDefault(); const dt=e.dataTransfer; if(!dt) return;
   const files=[...dt.files];
-  const audio=files.filter(f=>f.type.startsWith('audio')||/\.(mp3|flac|ogg|wav|aac|m4a|opus|weba)$/i.test(f.name));
+  const audio=files.filter(f=>f.type.startsWith('audio')||f.type==='video/mp4'||/\.(mp3|flac|ogg|wav|aac|m4a|opus|weba|mp4|m4v)$/i.test(f.name));
   const img=files.find(f=>f.type.startsWith('image'));
   if(audio.length>1) loadPlaylist(audio);
   else if(audio.length===1) loadAudioFile(audio[0]);
