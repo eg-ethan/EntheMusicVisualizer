@@ -2054,6 +2054,7 @@ function _buildCompose(mi){
 }
 const _cProgs=new Array(29).fill(null);
 const _cPend =new Array(29).fill(null);
+let _bgNext=1;
 function _ensureMode(mi){
   if(_cProgs[mi]||_cPend[mi])return;
   _cPend[mi]=program(_buildCompose(mi));
@@ -2065,6 +2066,14 @@ function _pollModes(){
     try{_cProgs[i]=_finalizeProgram(_cPend[i]);}
     catch(e){console.warn('mode',i,'shader err',e);}
     _cPend[i]=null;
+  }
+  // background: compile one more mode whenever the GPU is idle
+  if(_bgNext<29&&_cProgs[0]){
+    let inFlight=0; for(let i=0;i<29;i++) if(_cPend[i]) inFlight++;
+    if(inFlight===0){
+      while(_bgNext<29&&(_cProgs[_bgNext]||_cPend[_bgNext])) _bgNext++;
+      if(_bgNext<29) _ensureMode(_bgNext++);
+    }
   }
 }
 /* ===================================================================== */
@@ -2328,7 +2337,12 @@ function resize(){
 }
 addEventListener('resize',resize); resize();
 
-function U(p,n){ return gl.getUniformLocation(p,n); }
+const _uCache=new WeakMap();
+function U(p,n){
+  let c=_uCache.get(p);
+  if(!c){c=Object.create(null);_uCache.set(p,c);}
+  return n in c ? c[n] : (c[n]=gl.getUniformLocation(p,n));
+}
 function setCommon(p,rx,ry){
   gl.uniform2f(U(p,'uRes'),rx,ry);
   gl.uniform1f(U(p,'uTime'),S.time); gl.uniform1f(U(p,'uDose'),S.fxDose);
