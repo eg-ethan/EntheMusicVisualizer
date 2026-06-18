@@ -306,6 +306,7 @@
         <button class="tripbtn" style="flex:2" id="spPlayBtn" onclick="spTogglePlay()">▶ play</button>
         <button class="tripbtn" style="flex:1" onclick="spNext()">⏭</button>
       </div>
+      <button class="tripbtn" id="spSyncBtn" style="margin-bottom:8px;background:rgba(98,230,201,.12);border-color:rgba(98,230,201,.4);color:var(--accent2)" onclick="_connectSpotifyLoopback()">✦ sync visualizer to spotify</button>
       <div id="spBrowser"></div>
       <button class="tripbtn" style="margin-top:8px;opacity:.5;font-size:9px" onclick="spotifyLogout()">disconnect</button>
     </div>
@@ -3359,7 +3360,59 @@ function spotifyLogout(){
   document.getElementById('spUserName').textContent='';
 }
 
+// ── virtual loopback: intercept Spotify's AudioContext before the SDK creates it ──
+function _patchAudioContextForSpotify(){
+  if(SP._ctxPatched) return; SP._ctxPatched=true;
+  const _Orig=window.AudioContext||window.webkitAudioContext;
+  function _EntheAC(...args){
+    const ctx=new _Orig(...args);
+    if(SP._listenForCtx&&!SP._spCtx){
+      SP._listenForCtx=false; SP._spCtx=ctx;
+      try{
+        const realDest=ctx.destination;   // grab real destination BEFORE override
+        const tap=ctx.createGain();
+        const ms=ctx.createMediaStreamDestination();
+        tap.connect(realDest); tap.connect(ms);
+        Object.defineProperty(ctx,'destination',{get:()=>tap,configurable:true});
+        SP._spStream=ms.stream;
+        console.log('[ENTHE] Spotify AudioContext intercepted — loopback stream ready');
+      }catch(e){ console.warn('[ENTHE] loopback setup failed',e); }
+    }
+    return ctx;
+  }
+  _EntheAC.prototype=_Orig.prototype;
+  Object.setPrototypeOf(_EntheAC,_Orig);
+  window.AudioContext=window.webkitAudioContext=_EntheAC;
+}
+
+async function _connectSpotifyLoopback(){
+  if(!SP._spStream){ flashHint('⚠ start playing a Spotify track first, then sync'); return; }
+  AUDIO.ctx=AUDIO.ctx||new (window.AudioContext||window.webkitAudioContext)();
+  await AUDIO.ctx.resume();
+  if(S.audio.on) disableAudio();
+  const node=AUDIO.ctx.createMediaStreamSource(SP._spStream);
+  AUDIO.src=node;
+  AUDIO.analyser=AUDIO.ctx.createAnalyser(); AUDIO.analyser.fftSize=2048; AUDIO.analyser.smoothingTimeConstant=0.8;
+  AUDIO.data=new Uint8Array(AUDIO.analyser.frequencyBinCount);
+  AUDIO.wave=new Float32Array(AUDIO.analyser.fftSize);
+  node.connect(AUDIO.analyser);
+  try{
+    AUDIO.splitter=AUDIO.ctx.createChannelSplitter(2); node.connect(AUDIO.splitter);
+    AUDIO.anL=AUDIO.ctx.createAnalyser(); AUDIO.anL.fftSize=2048;
+    AUDIO.anR=AUDIO.ctx.createAnalyser(); AUDIO.anR.fftSize=2048;
+    AUDIO.splitter.connect(AUDIO.anL,0); AUDIO.splitter.connect(AUDIO.anR,1);
+    AUDIO.waveL=new Float32Array(2048); AUDIO.waveR=new Float32Array(2048);
+  }catch(e){ AUDIO.splitter=null; AUDIO.anL=AUDIO.anR=null; }
+  S.audio.on=true; S.audio.source='spotify';
+  document.getElementById('tgAudio').classList.add('on');
+  document.getElementById('audioMeter').classList.add('on');
+  AUDIO.silentSince=S.time; AUDIO.silentWarned=false;
+  setAudioStatus('● live · spotify → visualizer','live');
+  flashHint('✦ Spotify wired — visualizer is reactive');
+}
+
 function _spInitSDK(token){
+  _patchAudioContextForSpotify();
   window.onSpotifyWebPlaybackSDKReady=()=>{
     SP.player=new Spotify.Player({name:'ENTHE',getOAuthToken:cb=>_spToken().then(cb),volume:0.8});
     SP.player.addListener('ready',({device_id})=>{ SP.deviceId=device_id; flashHint('Spotify ready — pick a playlist'); });
@@ -3375,10 +3428,10 @@ function _spInitSDK(token){
         document.getElementById('spArtistName').textContent=t.artists.map(a=>a.name).join(', ');
         const imgs=t.album.images; if(imgs.length) document.getElementById('spArt').src=imgs[imgs.length-1].url;
         document.getElementById('spNowPlaying').style.display='';
-        // highlight playing item
-        document.querySelectorAll('#spBrowser .sp-item').forEach((el,i)=>el.classList.toggle('playing',state.track_window.current_track.uri===el.dataset.uri));
+        document.querySelectorAll('#spBrowser .sp-item').forEach(el=>el.classList.toggle('playing',t.uri===el.dataset.uri));
       }
     });
+    SP._listenForCtx=true;  // arm intercept just before SDK creates its AudioContext
     SP.player.connect();
   };
   if(!document.querySelector('script[src*="spotify-player"]')){
@@ -3387,6 +3440,8 @@ function _spInitSDK(token){
 }
 
 async function _spInitUI(){
+  // Eagerly init our AudioContext before the Spotify SDK creates its own — prevents mis-interception
+  AUDIO.ctx=AUDIO.ctx||new (window.AudioContext||window.webkitAudioContext)();
   const me=await _spFetch('/me'); if(!me) return;
   document.getElementById('spUserName').textContent=me.display_name||me.id;
   document.getElementById('spLoggedOut').style.display='none';
@@ -3442,6 +3497,7 @@ async function spNext(){ if(SP.player) SP.player.nextTrack(); }
 
 // handle OAuth redirect back to page, or restore session on reload
 (async()=>{
+  if(!localStorage.getItem('sp_cid')) localStorage.setItem('sp_cid','da3dff81708d493990c42ac0ba0985d7');
   const code=new URLSearchParams(location.search).get('code');
   if(code){ const ok=await _spExchangeCode(code); if(ok) await _spInitUI(); return; }
   if(localStorage.getItem('sp_tok')) await _spInitUI();
