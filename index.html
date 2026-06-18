@@ -235,7 +235,13 @@
       <div class="pill" data-src="file">📁 file · track</div>
       <div class="pill" data-src="system">▣ browser tab</div>
     </div>
-    <input type="file" id="audioFile" accept="audio/*" style="display:none">
+    <input type="file" id="audioFile" accept="audio/*" multiple style="display:none">
+    <input type="file" id="audioFolder" accept="audio/*" webkitdirectory style="display:none">
+    <div style="display:flex;gap:5px;margin-top:6px">
+      <button class="tripbtn" style="margin-top:0;flex:1" onclick="document.getElementById('audioFile').click()">📁 load tracks</button>
+      <button class="tripbtn" style="margin-top:0;flex:1" onclick="document.getElementById('audioFolder').click()">📂 load folder</button>
+    </div>
+    <div id="playlistInfo" class="audstat" style="display:none;margin-top:5px"></div>
     <select id="audioDev" class="audsel" title="audio input device"></select>
     <div id="audioHelp" class="audstat" style="cursor:pointer;color:var(--accent2);margin-top:6px">🔊 capture ALL machine audio (macOS) →</div>
     <div class="toggles" style="margin-top:7px">
@@ -2950,24 +2956,71 @@ function updateTimeline(a){
   if(S.drop && near<3.5 && near>0.4){ const c=Math.ceil(near); if(c!==tl._cd){ tl._cd=c; flashHint('🌀 drop in '+c+'…'); } } else if(near>3.5) tl._cd=0;
   while(tl._si<tl.sections.length && ct>=tl.sections[tl._si].t){ const sec=tl.sections[tl._si]; tl._si++; if(S.journey && tl._si>1) guidedSection(sec); }
 }
+// ── playlist ──────────────────────────────────────────────────────────────
+AUDIO.playlist=[]; AUDIO.plIdx=0;
+function _updatePlaylistUI(){
+  const el=document.getElementById('playlistInfo');
+  if(!el) return;
+  if(AUDIO.playlist.length<2){ el.style.display='none'; return; }
+  el.style.display='';
+  el.innerHTML=`track <b>${AUDIO.plIdx+1} / ${AUDIO.playlist.length}</b> — ${(AUDIO.playlist[AUDIO.plIdx]?.name||'').slice(0,30)}`;
+}
+function _loadTrackAtIdx(idx){
+  if(idx<0||idx>=AUDIO.playlist.length) return;
+  AUDIO.plIdx=idx; _updatePlaylistUI();
+  loadAudioFile(AUDIO.playlist[idx],true);
+}
+function loadPlaylist(files){
+  const arr=[...files].filter(f=>f.type.startsWith('audio')||/\.(mp3|flac|ogg|wav|aac|m4a|opus|weba)$/i.test(f.name));
+  if(!arr.length) return;
+  arr.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+  AUDIO.playlist=arr; AUDIO.plIdx=0; _updatePlaylistUI();
+  loadAudioFile(arr[0],true);
+}
+
 // 📁 load a track from a file — the universal source (works in every browser)
-function loadAudioFile(file){
+function loadAudioFile(file, fromPlaylist){
   AUDIO.ctx = AUDIO.ctx || new (window.AudioContext||window.webkitAudioContext)();
-  if(!AUDIO.fileEl){ AUDIO.fileEl=new Audio(); AUDIO.fileEl.loop=true; AUDIO.fileNode=AUDIO.ctx.createMediaElementSource(AUDIO.fileEl); }
+  if(!AUDIO.fileEl){
+    AUDIO.fileEl=new Audio();
+    AUDIO.fileNode=AUDIO.ctx.createMediaElementSource(AUDIO.fileEl);
+    AUDIO.fileEl.addEventListener('ended',()=>{
+      if(AUDIO.playlist.length>1 && AUDIO.plIdx<AUDIO.playlist.length-1)
+        _loadTrackAtIdx(AUDIO.plIdx+1);
+      else if(AUDIO.playlist.length<2) AUDIO.fileEl.play(); // loop single track
+    });
+  }
+  if(!fromPlaylist){ AUDIO.playlist=[file]; AUDIO.plIdx=0; _updatePlaylistUI(); }
+  AUDIO.fileEl.loop=false;
   if(AUDIO.fileEl.src){ try{URL.revokeObjectURL(AUDIO.fileEl.src);}catch(e){} }
   AUDIO.fileEl.src=URL.createObjectURL(file); AUDIO.fileName=(file.name||'track').slice(0,28);
   S.audio.source='file'; document.querySelectorAll('#audioSrc .pill').forEach(e=>e.classList.toggle('active',e.dataset.src==='file'));
   if(S.audio.on) disableAudio(); enableAudio();
-  S.timeline=null;                                               // analyse the whole track for precise, predictive drops
+  S.timeline=null;
   if(S.drop && file.arrayBuffer){ setAudioStatus('▶ '+AUDIO.fileName+' · ✦ analysing waveform for drops…','');
     file.arrayBuffer().then(ab=>analyzeTrack(ab)).then(tl=>{ S.timeline=tl;
       if(tl){ flashHint(`✦ ${AUDIO.fileName} mapped — ${tl.drops.length} drop${tl.drops.length===1?'':'s'} · ${tl.sections.length} sections (timeline-synced)`);
         if(S.audio.on&&S.audio.source==='file') setAudioStatus(`▶ ${AUDIO.fileName} · ✦ ${tl.drops.length} drops mapped — predictive sync`,'live'); } }); }
 }
-document.getElementById('audioFile').addEventListener('change',e=>{ if(e.target.files[0]) loadAudioFile(e.target.files[0]); });
-addEventListener('dragover',e=>{ e.preventDefault(); });   // drag-drop: audio→track · image→image-warp
-addEventListener('drop',e=>{ e.preventDefault(); const f=e.dataTransfer&&e.dataTransfer.files[0]; if(!f) return;
-  if(f.type.startsWith('audio')) loadAudioFile(f); else if(f.type.startsWith('image')) uploadImage(f); });
+document.getElementById('audioFile').addEventListener('change',e=>{
+  const files=e.target.files; if(!files||!files.length) return;
+  files.length>1 ? loadPlaylist(files) : loadAudioFile(files[0]);
+  e.target.value='';
+});
+document.getElementById('audioFolder').addEventListener('change',e=>{
+  if(e.target.files&&e.target.files.length) loadPlaylist(e.target.files);
+  e.target.value='';
+});
+addEventListener('dragover',e=>{ e.preventDefault(); });   // drag-drop: audio→track/playlist · image→image-warp
+addEventListener('drop',e=>{
+  e.preventDefault(); const dt=e.dataTransfer; if(!dt) return;
+  const files=[...dt.files];
+  const audio=files.filter(f=>f.type.startsWith('audio')||/\.(mp3|flac|ogg|wav|aac|m4a|opus|weba)$/i.test(f.name));
+  const img=files.find(f=>f.type.startsWith('image'));
+  if(audio.length>1) loadPlaylist(audio);
+  else if(audio.length===1) loadAudioFile(audio[0]);
+  else if(img) uploadImage(img);
+});
 
 // audio INPUT device picker — pick a virtual loopback (BlackHole/Loopback) to capture all machine audio
 async function refreshDevices(){ try{ if(!navigator.mediaDevices||!navigator.mediaDevices.enumerateDevices) return;
