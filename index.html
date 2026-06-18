@@ -425,7 +425,7 @@
 <div id="science"><div class="card" id="scienceCard"></div></div>
 
 <div id="fatal">your browser could not start WebGL2 — try a recent Chrome / Firefox / Safari with hardware acceleration on.</div>
-<div id="loading"><div class="ldot"><span></span><span></span><span></span></div><div>compiling shaders…</div></div>
+<div id="loading"><div class="ldot"><span></span><span></span><span></span></div><div id="loadingTxt">compiling shaders…</div><button id="loadingEnter" style="display:none;margin-top:8px;font-family:var(--mono);font-size:13px;letter-spacing:.22em;text-transform:uppercase;padding:13px 38px;border-radius:12px;border:1px solid var(--accent);background:rgba(180,139,255,.14);color:#fff;cursor:pointer;transition:.18s" onmouseover="this.style.background='rgba(180,139,255,.28)'" onmouseout="this.style.background='rgba(180,139,255,.14)'" onclick="_enterApp()">▶ enter</button></div>
 
 <script>
 "use strict";
@@ -3325,26 +3325,30 @@ function preloadSkip(){
 }
 
 async function _startPreloadedMusic(){
-  // fetch each track as a File-like Blob so the existing playlist system handles it
   const files=[];
   for(const path of PRELOADED_TRACKS){
     try{
-      const res=await fetch(path);
-      if(!res.ok) continue;
+      const res=await fetch(path); if(!res.ok) continue;
       const blob=await res.blob();
       const name=path.split('/').pop();
       files.push(new File([blob],name,{type:blob.type||'audio/mpeg'}));
     }catch(e){ console.warn('preload fetch failed:',path,e); }
   }
   if(!files.length) return;
-  loadPlaylist(files);
-  // auto-enable audio
+  // Build playlist without triggering enableAudio — audio starts on _enterApp (user gesture)
+  const arr=[...files].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+  AUDIO.playlist=arr; AUDIO.plIdx=0; _updatePlaylistUI();
   S.audio.source='file';
   document.querySelectorAll('#audioSrc .pill').forEach(e=>e.classList.toggle('active',e.dataset.src==='file'));
-  await enableAudio();
 }
 
-// kick off after shaders are ready so the AudioContext is created in the right order
+async function _enterApp(){
+  document.getElementById('loading').style.display='none';
+  // Start music — this runs inside a click handler so autoplay is allowed
+  if(AUDIO.playlist.length) _loadTrackAtIdx(0);
+}
+
+// kick off fetch as soon as shaders are ready (before user clicks enter)
 window._preloadMusicReady=()=>_startPreloadedMusic();
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -3571,7 +3575,10 @@ function _waitShaders(){
     document.getElementById('loading').style.display='none'; throw e; }
   _pollModes();
   if(!_cProgs[0]){ requestAnimationFrame(_waitShaders); return; }
-  document.getElementById('loading').style.display='none';
+  // shaders ready — show enter button (satisfies browser autoplay policy on click)
+  document.getElementById('loadingTxt').textContent='ready';
+  document.getElementById('loading').querySelector('.ldot').style.display='none';
+  document.getElementById('loadingEnter').style.display='';
   requestAnimationFrame(frame);
   console.log('%cENTHEA','color:#b48bff;font-size:20px;font-weight:bold','— neural-field engine online. mathematics of hallucination running.');
   if(window._preloadMusicReady) window._preloadMusicReady();
