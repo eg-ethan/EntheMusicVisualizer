@@ -1,16 +1,15 @@
 ```
-    ███████╗███╗   ██╗████████╗██╗  ██╗███████╗ █████╗ 
-    ██╔════╝████╗  ██║╚══██╔══╝██║  ██║██╔════╝██╔══██╗
+    ███████╗███╗   ██╗████████╗██╗  ██╗███████╗  
+    ██╔════╝████╗  ██║╚══██╔══╝██║  ██║██╔════╝
     █████╗  ██╔██╗ ██║   ██║   ███████║█████╗  ███████║
-    ██╔══╝  ██║╚██╗██║   ██║   ██╔══██║██╔══╝  ██╔══██║
-    ███████╗██║ ╚████║   ██║   ██║  ██║███████╗██║  ██║
-    ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+    ██╔══╝  ██║╚██╗██║   ██║   ██╔══██║██╔══
+    ███████╗██║ ╚████║   ██║   ██║  ██║███████╗
+    ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚
             ∞
          THE GEOMETRY OF THE SUBSTRATE WITHIN  🜂👁️🜂
          EX NATURA, PER MATHEMATICAM, AD VISIONEM
         From Nature, Through Mathematics, To Vision
 
-                 FORTES FORTUNA IUVAT
 ```
 
 # ENTHEA ∞ 🔮
@@ -26,7 +25,7 @@ A real-time **psychedelic visual synthesizer** + **pro-grade music visualizer** 
 visionary states straight from the neuroscience and mathematics of how a brain breaks reality into beauty.
 **One HTML file. WebGL2 + Web Audio. Zero dependencies. No build. No tracking. No caged cognition.** 🐉
 
-> **enthea** — the feminine of *entheos*, *"the goddess within"*; same root as **entheogen**. this is that, rendered in light.
+> **enthe-** — the feminine of *entheos*, *"the goddess within"*; same root as **entheogen**. this is that, rendered in light.
 
 ---
 
@@ -39,7 +38,7 @@ honeycombs. Map that cortical pattern *backward* through the retina→V1 transfo
 cobwebs** — Klüver's four *form constants*, seen across psychedelics, flicker, migraine, near-death,
 hypnagogia, every culture, all of history.
 
-ENTHEA **simulates the cortex and runs that math live on your GPU.** Nothing here is a stock loop or a
+ENTHE- **simulates the cortex and runs that math live on your GPU.** Nothing here is a stock loop or a
 canned effect. The patterns are *computed* — neural fields hitting Turing bifurcations, reaction-diffusion
 PDEs, wave interference, Kleinian groups, elliptic functions, the lot — then painted in perceptual OKLab
 colour and driven by your music.

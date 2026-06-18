@@ -184,6 +184,12 @@
   @media (max-width:640px){
     #panel{width:86vw}#title{left:18px;top:14px}#title h1{font-size:17px}
   }
+  #loading{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);font-family:var(--mono);font-size:11px;letter-spacing:.18em;color:var(--dim);gap:16px}
+  #loading .ldot{display:flex;gap:9px}
+  #loading .ldot span{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:ldpulse 1.4s ease-in-out infinite}
+  #loading .ldot span:nth-child(2){animation-delay:.22s;background:var(--accent2)}
+  #loading .ldot span:nth-child(3){animation-delay:.44s}
+  @keyframes ldpulse{0%,80%,100%{transform:scale(0.5);opacity:.3}40%{transform:scale(1.0);opacity:1}}
 </style>
 </head>
 <body>
@@ -354,6 +360,7 @@
 <div id="science"><div class="card" id="scienceCard"></div></div>
 
 <div id="fatal">your browser could not start WebGL2 — try a recent Chrome / Firefox / Safari with hardware acceleration on.</div>
+<div id="loading"><div class="ldot"><span></span><span></span><span></span></div><div>compiling shaders…</div></div>
 
 <script>
 "use strict";
@@ -881,15 +888,15 @@ vec3 oklch(float L, float C, float h){ return max(oklab2lin(vec3(L, C*cos(h), C*
 vec3 PAL(float t, int id){
   t=fract(t);
   float Lw = 0.5 + 0.34*cos(t*TAU - 1.0);   // lightness wave (~0.16..0.84) → dark voids + bright peaks
-  if(id==0) return oklch(Lw, 0.17, t*TAU);                                      // SPECTRAL (full wheel, tonal)
+  if(id==0) return oklch(Lw, 0.17, 0.65+t*(TAU-1.30));                          // SPECTRAL (orange→violet, no pink/red)
   if(id==1) return oklch(mix(0.30,0.86,t), 0.18, mix(0.45,5.70,t));            // CHAKRA red→violet
-  if(id==2) return oklch(mix(0.14,0.96,t), mix(0.08,0.21,t), mix(0.10,1.60,t));// EMBER (deep coal→white-hot)
+  if(id==2) return oklch(mix(0.14,0.82,t), mix(0.08,0.21,t), mix(0.10,1.60,t));// EMBER (deep coal→bright amber, no white)
   if(id==3) return oklch(mix(0.16,0.88,t), 0.15, mix(3.20,4.85,t));            // OCEAN (abyss→cyan)
   if(id==4) return oklch(mix(0.22,0.90,t), 0.16, mix(5.0,1.6,0.5+0.5*cos(t*TAU))); // VIOLET-GOLD
-  if(id==5) return oklch(Lw*1.08, 0.23, t*TAU);                                 // DMT (high chroma, tonal)
+  if(id==5) return oklch(Lw*1.08, 0.23, 0.65+t*(TAU-1.30));                    // DMT (high chroma, orange→violet, no pink)
   if(id==6) return oklch(mix(0.03,0.92,pow(t,1.6)), 0.06+0.10*t, mix(0.7,1.1,t)); // NOIR (black→amber accent)
-  if(id==7) return oklch(mix(0.05,0.78,t), mix(0.10,0.24,t), mix(4.7,6.0,t));   // NEBULA (void→magenta/violet)
-  if(id==8) return oklch(mix(0.03,0.90,pow(t,1.3)), mix(0.10,0.25,t), mix(0.02,0.95,t)); // INFRARED
+  if(id==7) return oklch(mix(0.05,0.78,t), mix(0.10,0.24,t), mix(4.7,5.5,t));   // NEBULA (void→violet, no red/pink)
+  if(id==8) return oklch(mix(0.03,0.90,pow(t,1.3)), mix(0.10,0.25,t), mix(0.30,0.95,t)); // INFRARED (warm red-orange, no pink)
   float f=clamp(t,0.0,0.999)*5.0; int i=int(f); return mix(uImgPal[i], uImgPal[i+1], fract(f)); // IMAGE (id 9)
 }
 vec3 hueShift(vec3 c, float a){ const vec3 k=vec3(0.57735); float ca=cos(a); return c*ca + cross(k,c)*sin(a) + k*dot(k,c)*(1.0-ca); }
@@ -1984,6 +1991,84 @@ void main(){
   frag=vec4(col,1.0);
 }`;
 
+/* ======= PER-MODE LAZY COMPOSE SYSTEM =================================
+   Instead of one giant 1100-line shader with all 29 modes, build a small
+   per-mode shader (~300 lines each) at the point of first use.
+   Only mode 0 compiles at startup; others compile in the background when
+   the user switches to them. Uses KHR_parallel_shader_compile on Chrome
+   so even background compilation never freezes the tab.
+   ====================================================================== */
+function _glslFn(name){
+  const re=new RegExp(`(?:^|\\n)(?:vec[234]|float|int|bool|void|mat[234])\\s+${name}\\s*\\(`);
+  const m=re.exec(COMPOSE); if(!m){console.warn('_glslFn missing:',name);return '';}
+  const start=m.index>0?m.index+1:m.index;
+  let i=start,d=0,begun=false;
+  while(i<COMPOSE.length){const c=COMPOSE[i];if(c==='{'){d++;begun=true;}else if(c==='}'&&begun&&--d===0)return COMPOSE.slice(start,i+1)+'\n';i++;}
+  return '';
+}
+const _CHEAD=(()=>{
+  const mi=COMPOSE.indexOf('vec3 formMode(');
+  return COMPOSE.slice(0,mi)+_glslFn('hexLocal'); // hexLocal needed by wallpaper in tail
+})();
+const _CTAIL=(()=>{
+  const wi=COMPOSE.indexOf('\nvec2 wallpaper(');
+  let t=COMPOSE.slice(wi+1);
+  const cs=t.indexOf('  vec3 col;\n  if(uMode==0)');
+  const ce_s='  else col=vortexMode(p,t);\n'; const ce=t.indexOf(ce_s)+ce_s.length;
+  return t.slice(0,cs)+'  vec3 col = modeColor(p, t);\n'+t.slice(ce);
+})();
+const _MCFG=[
+  {fns:['formMode'],                               call:'formMode(p,t)'},
+  {fns:['neuralMode'],                             call:'neuralMode(p,t)'},
+  {fns:['turingMode'],                             call:'turingMode()'},
+  {fns:['sacred'],                                 call:'sacred(p,t)'},
+  {fns:['breathing'],                              call:'breathing(p,t)'},
+  {fns:['hyperspace','hyperspace3D'],              call:'uRay>0.5?hyperspace3D(p,t):hyperspace(p,t)'},
+  {fns:['hyperbolic'],                             call:'hyperbolic(p,t)'},
+  {fns:['entoptic'],                               call:'entoptic(p,t)'},
+  {fns:['quasicrystal'],                           call:'quasicrystal(p,t)'},
+  {fns:['cymatics'],                               call:'cymatics(p,t)'},
+  {fns:['imageMode'],                              call:'imageMode(p,t)'},
+  {fns:['voronoiMode'],                            call:'voronoiMode(p,t)'},
+  {fns:['phasorMode'],                             call:'phasorMode(p,t)'},
+  {fns:['lizardMode'],                             call:'lizardMode(p,t)'},
+  {fns:['scopeMode'],                              call:'scopeMode(p,t)'},
+  {fns:['deMandelbox','fractalMode'],              call:'fractalMode(p,t)'},
+  {fns:['particlesBg'],                            call:'particlesBg(p,t)'},
+  {fns:['cmulC','weierMode'],                      call:'weierMode(p,t)'},
+  {fns:['cmul','cmulConj','blaschkeMode'],         call:'blaschkeMode(p,t)'},
+  {fns:['mobius','mobDet','indraMode'],            call:'indraMode(p,t)'},
+  {fns:['arnoldWind','arnoldTongues'],             call:'arnoldTongues(p,t)'},
+  {fns:['isPrimeI','gaussPrime','gaussMode'],      call:'gaussMode(p,t)'},
+  {fns:['defectMode'],                             call:'defectMode(p,t)'},
+  {fns:['pentaMode'],                              call:'pentaMode(p,t)'},
+  {fns:['lague','legP0','radialNL','orbitalMode'], call:'orbitalMode(p,t)'},
+  {fns:['denomMode'],                              call:'denomMode(p,t)'},
+  {fns:['waveMode'],                               call:'waveMode(p,t)'},
+  {fns:['phaseportal'],                            call:'phaseportal(p,t)'},
+  {fns:['vortexMode'],                             call:'vortexMode(p,t)'},
+];
+function _buildCompose(mi){
+  const{fns,call}=_MCFG[mi];
+  return _CHEAD+fns.map(_glslFn).join('')+`vec3 modeColor(vec2 p,float t){return ${call};}\n`+_CTAIL;
+}
+const _cProgs=new Array(29).fill(null);
+const _cPend =new Array(29).fill(null);
+function _ensureMode(mi){
+  if(_cProgs[mi]||_cPend[mi])return;
+  _cPend[mi]=program(_buildCompose(mi));
+}
+function _pollModes(){
+  for(let i=0;i<29;i++){
+    if(!_cPend[i]||_cProgs[i])continue;
+    if(_parExt&&!gl.getProgramParameter(_cPend[i].prog,_parExt.COMPLETION_STATUS_KHR))continue;
+    try{_cProgs[i]=_finalizeProgram(_cPend[i]);}
+    catch(e){console.warn('mode',i,'shader err',e);}
+    _cPend[i]=null;
+  }
+}
+/* ===================================================================== */
+
 /* ---- PRESENT pass: OKLab grade, chroma, glow, flicker, grain, tonemap ---- */
 const PRESENT = `#version 300 es
 ${COMMON}
@@ -2101,23 +2186,30 @@ void main(){
 
 /* ============================== GL PLUMBING ============================== */
 function compile(type,src){
-  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); return s;
+}
+function _checkShader(s,src){
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
     console.error(gl.getShaderInfoLog(s)); console.error(src.split('\n').map((l,i)=>(i+1)+': '+l).join('\n'));
     throw new Error('shader compile failed');
-  } return s;
+  }
 }
 function program(fs){
+  const vs=compile(gl.VERTEX_SHADER,VERT), fss=compile(gl.FRAGMENT_SHADER,fs);
   const p=gl.createProgram();
-  gl.attachShader(p,compile(gl.VERTEX_SHADER,VERT));
-  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
+  gl.attachShader(p,vs); gl.attachShader(p,fss);
   gl.bindAttribLocation(p,0,'aPos'); gl.linkProgram(p);
-  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(p)); throw new Error('link failed'); }
-  return p;
+  return {prog:p,vs,fss,src:fs};
 }
-let progField, progCompose, progPresent;
-try{ progField=program(FIELD); progCompose=program(COMPOSE); progPresent=program(PRESENT); }
-catch(e){ const f=document.getElementById('fatal'); f.style.display='grid'; f.textContent='shader error — see console'; throw e; }
+function _finalizeProgram({prog,vs,fss,src}){
+  _checkShader(vs,VERT); _checkShader(fss,src);
+  if(!gl.getProgramParameter(prog,gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(prog)); throw new Error('link failed'); }
+  gl.deleteShader(vs); gl.deleteShader(fss); return prog;
+}
+let progField, progPresent;
+const _parExt=gl.getExtension('KHR_parallel_shader_compile');
+const _pf=program(FIELD), _pp=program(PRESENT);
+_ensureMode(0);
 
 const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
 const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
@@ -2308,22 +2400,24 @@ function frame(){
     }
   }
 
-  // 2) compose
-  gl.useProgram(progCompose); gl.viewport(0,0,sceneW,sceneH);
+  // 2) compose — lazy per-mode program
+  _ensureMode(S.mode); _pollModes();
+  const _cp=_cProgs[S.mode]||_cProgs[0]; if(!_cp) return;
+  gl.useProgram(_cp); gl.viewport(0,0,sceneW,sceneH);
   gl.bindFramebuffer(gl.FRAMEBUFFER,sceneB.fbo);
-  setCommon(progCompose,sceneW,sceneH);
-  gl.uniform1f(U(progCompose,'uFeedback'),feedback);
-  gl.uniform1f(U(progCompose,'uFeedZoom'),1.0 - dose*fx.zoom);
-  gl.uniform1f(U(progCompose,'uFeedRot'),dose*0.004*fx.rot*Math.sin(S.time*0.3));
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sceneA.tex); gl.uniform1i(U(progCompose,'uScenePrev'),0);
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,fieldA.tex); gl.uniform1i(U(progCompose,'uField'),1);
+  setCommon(_cp,sceneW,sceneH);
+  gl.uniform1f(U(_cp,'uFeedback'),feedback);
+  gl.uniform1f(U(_cp,'uFeedZoom'),1.0 - dose*fx.zoom);
+  gl.uniform1f(U(_cp,'uFeedRot'),dose*0.004*fx.rot*Math.sin(S.time*0.3));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sceneA.tex); gl.uniform1i(U(_cp,'uScenePrev'),0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,fieldA.tex); gl.uniform1i(U(_cp,'uField'),1);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,specTexture);
   if(S.audio.on) gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,SPEC_N,1,gl.RED,gl.UNSIGNED_BYTE,AUDIO.specTex);
-  gl.uniform1i(U(progCompose,'uSpectrum'),2);
-  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D,imgTexture); gl.uniform1i(U(progCompose,'uImage'),3);
+  gl.uniform1i(U(_cp,'uSpectrum'),2);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D,imgTexture); gl.uniform1i(U(_cp,'uImage'),3);
   gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D,waveTexture);
   if(S.audio.on) gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,WAVE_N,1,gl.RG,gl.UNSIGNED_BYTE,AUDIO.waveTex);  // upload the live wave once/frame
-  gl.uniform1i(U(progCompose,'uWaveform'),4);
+  gl.uniform1i(U(_cp,'uWaveform'),4);
   gl.drawArrays(gl.TRIANGLES,0,3);
   const ts=sceneA; sceneA=sceneB; sceneB=ts;
 
@@ -3082,8 +3176,26 @@ document.querySelectorAll('#panel input[type=range]').forEach(el=>{ el.addEventL
 buildUI(); buildSubstanceUI(); buildAudioMeter(); buildFlipsUI(); buildScenesUI();
 ['tgChoreo','tgJourney','tgRay','tgDrop','tgCine','tgTrans'].forEach(idd=>{ const e=document.getElementById(idd); if(e) e.classList.add('on'); }); // default-on: choreography · autopilot · 3D · drop-detect · cinematic · transitions
 refreshDevices();
-requestAnimationFrame(frame);
-console.log('%cENTHEA','color:#b48bff;font-size:20px;font-weight:bold','— neural-field engine online. mathematics of hallucination running.');
+function _waitShaders(){
+  if(_parExt){
+    const CK=_parExt.COMPLETION_STATUS_KHR;
+    const m0=_cPend[0];
+    if(!gl.getProgramParameter(_pf.prog,CK)||!gl.getProgramParameter(_pp.prog,CK)||
+       !m0||!gl.getProgramParameter(m0.prog,CK)){
+      requestAnimationFrame(_waitShaders); return;
+    }
+  }
+  try{
+    if(!progField){ progField=_finalizeProgram(_pf); progPresent=_finalizeProgram(_pp); }
+  } catch(e){ const f=document.getElementById('fatal'); f.style.display='grid'; f.textContent='shader error — see console';
+    document.getElementById('loading').style.display='none'; throw e; }
+  _pollModes();
+  if(!_cProgs[0]){ requestAnimationFrame(_waitShaders); return; }
+  document.getElementById('loading').style.display='none';
+  requestAnimationFrame(frame);
+  console.log('%cENTHEA','color:#b48bff;font-size:20px;font-weight:bold','— neural-field engine online. mathematics of hallucination running.');
+}
+requestAnimationFrame(_waitShaders);
 </script>
 </body>
 </html>
