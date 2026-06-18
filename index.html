@@ -3581,7 +3581,8 @@ function _waitShaders(){
   // shaders ready — show enter button (satisfies browser autoplay policy on click)
   document.getElementById('loadingTxt').textContent='ready';
   document.getElementById('loading').querySelector('.ldot').style.display='none';
-  document.getElementById('loadingEnter').style.display='';
+  const _eb=document.getElementById('loadingEnter');
+  _eb.style.display=''; _eb.focus();
   document.addEventListener('keydown',_enterAppKey);
   requestAnimationFrame(frame);
   console.log('%cENTHEA','color:#b48bff;font-size:20px;font-weight:bold','— neural-field engine online. mathematics of hallucination running.');
